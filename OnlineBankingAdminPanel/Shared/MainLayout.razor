@@ -1,0 +1,42 @@
+﻿@inherits LayoutComponentBase
+@inject IAuthService AuthService
+@using OnlineBankingAdminPanel.Services;
+<PageTitle>OnlineBankingAdminPanel</PageTitle>
+
+<div class="page d-flex">
+    <NavMenu />
+    <div class="flex-grow-1">
+        <header class="navbar navbar-dark bg-dark px-3">
+            <a class="navbar-brand text-white" href="">OnlineBankingAdminPanel</a>
+            <button class="navbar-toggler" @onclick="ToggleNavMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </header>
+
+        <main class="p-4">
+            <CascadingValue Name="IsWarmed" Value="@_isWarmed">
+                @Body
+            </CascadingValue>
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+    private bool _isWarmed;
+
+    private void ToggleNavMenu() => collapseNavMenu = !collapseNavMenu;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_isWarmed)
+        {
+            var token = await AuthService.GetTokenAsync(); // jetzt JS-Interop ok
+            if (!string.IsNullOrWhiteSpace(token))
+                await AuthService.SetTokenAsync(token);     // -> TokenStore füllen
+
+            _isWarmed = true;
+            StateHasChanged();
+        }
+    }
+}

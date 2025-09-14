@@ -1,0 +1,109 @@
+﻿@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject IAuthService AuthService
+@using OnlineBankingAdminPanel.Services
+@using OnlineBankingAdminPanel.Auth
+@using System.Security.Claims
+
+<div class="bg-dark text-white p-3" style="width: 240px; min-height: 100vh;">
+    <h4 class="text-center mb-4">📋 Menü</h4>
+
+    <ul class="nav flex-column">
+        <li class="nav-item mb-2">
+            <NavLink class="nav-link text-white" href="/dashboard" Match="NavLinkMatch.All">
+                🏠 Dashboard
+            </NavLink>
+        </li>
+
+        @if (isAuthenticated)
+        {
+            @* 👥 Benutzerverwaltung (Admin/Manager) *@
+            @if (canManageUsers)
+            {
+                <li class="nav-item mb-2">
+                    <NavLink class="nav-link text-white" href="/users">
+                        👥 Benutzerverwaltung
+                    </NavLink>
+                </li>
+
+            }
+            <AuthorizeView Roles="Admin">
+                <li class="nav-item mb-2">
+                    <NavLink class="nav-link text-white" href="/roles">🔑 Rollen</NavLink>
+                </li>
+            </AuthorizeView>
+
+            <li class="nav-item mb-2">
+                <NavLink class="nav-link text-white" href="/abteilungen">
+                    🏢 Abteilungen
+                </NavLink>
+            </li>
+
+            <li class="nav-item mb-2">
+                <NavLink class="nav-link text-white" href="/transactions">
+                    💸 Transaktionen Übersicht
+                </NavLink>
+            </li>
+
+            <li class="nav-item mb-2">
+                <NavLink class="nav-link text-white" href="/bankkonto">
+                    🏦 Bankkonto eröffnen
+                </NavLink>
+            </li>
+
+            <li class="nav-item mb-2">
+                <NavLink class="nav-link text-white" href="/transaction-export">
+                    📤 Export & Charts
+                </NavLink>
+            </li>
+           
+
+            <li class="nav-item">
+                <a class="nav-link text-white" href="#" @onclick="Logout">
+                    🚪 Abmelden
+                </a>
+            </li>
+        }
+        else
+        {
+            <li class="nav-item mb-2">
+                <NavLink class="nav-link text-white" href="/login">🔐 Login</NavLink>
+            </li>
+            <li class="nav-item mb-2">
+                <NavLink class="nav-link text-white" href="/register">📝 Registrieren</NavLink>
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    private bool isAuthenticated;
+    private bool canManageUsers; // Admin ODER Manager
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthenticationStateProvider.AuthenticationStateChanged += async (task) =>
+        {
+            var state = await task;
+            ApplyUser(state.User);
+            StateHasChanged();
+        };
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        ApplyUser(authState.User);
+    }
+
+    private void ApplyUser(ClaimsPrincipal user)
+    {
+        isAuthenticated = user.Identity?.IsAuthenticated ?? false;
+        canManageUsers = isAuthenticated && user.IsInAnyRole(Roles.CanManageUsers);
+    }
+
+    private async Task Logout()
+    {
+        if (AuthenticationStateProvider is CustomAuthStateProvider customProvider)
+            await customProvider.LogoutAsync();
+
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}

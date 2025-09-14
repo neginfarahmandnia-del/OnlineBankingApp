@@ -1,0 +1,18 @@
+﻿@page "/logout"
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@using OnlineBankingAdminPanel.Services
+@using OnlineBankingApp.Application.Dtos.Transactions
+
+<h3>Sie wurden abgemeldet</h3>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateProvider is CustomAuthStateProvider customAuth)
+        {
+            await customAuth.LogoutAsync();
+            Navigation.NavigateTo("/");
+        }
+    }
+}

@@ -1,0 +1,167 @@
+﻿@page "/transaction-export"
+@using System.Net.Http.Json
+@using OnlineBankingApp.Application.Dtos.BankAccounts
+@inject IHttpClientFactory ClientFactory
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<h3 class="mb-3">📤 Transaktionen: Export & Monats-Charts</h3>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <label class="form-label">Bankkonto</label>
+        <InputSelect @bind-Value="BankAccountId" class="form-select">
+            <option value="0">-- Konto wählen --</option>
+            @foreach (var a in accounts)
+            {
+                <option value="@a.Id">
+                    @a.Name (@a.Kontotyp) · @a.IBAN · @a.Abteilung
+                </option>
+            }
+        </InputSelect>
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">Monat</label>
+        <InputDate @bind-Value="SelectedDate" class="form-control" />
+        <div class="mt-2 d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => QuickSelectMonth(0)">Dieser Monat</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => QuickSelectMonth(-1)">Letzter Monat</button>
+        </div>
+    </div>
+
+    <div class="col-md-5 d-flex align-items-end gap-2">
+        <button class="btn btn-outline-primary" @onclick="ExportExcel" disabled="@IsExportDisabled">
+            ⬇️ Excel exportieren
+        </button>
+        <button class="btn btn-outline-danger" @onclick="ExportPdf" disabled="@IsExportDisabled">
+            ⬇️ PDF exportieren
+        </button>
+        <button class="btn btn-primary ms-auto" @onclick="LoadChart" disabled="@IsExportDisabled">
+            📊 Diagramm laden
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <p><em>Lade…</em></p>
+}
+
+<canvas id="monthlyChart" width="400" height="160"></canvas>
+
+@code {
+    private List<BankAccountDto> accounts = new();
+    private int BankAccountId { get; set; } = 0; // 0 = nichts gewählt
+    // Standard jetzt: ERSTER Tag des VORMONATS (passt zu deinem PDF-Export)
+    private DateTime SelectedDate { get; set; } =
+        new DateTime(DateTime.UtcNow.AddMonths(-1).Year, DateTime.UtcNow.AddMonths(-1).Month, 1);
+
+    private bool isLoading;
+    private string? error;
+
+    private bool IsExportDisabled => BankAccountId <= 0;
+
+    private HttpClient Api => ClientFactory.CreateClient("AuthenticatedClient");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            isLoading = true;
+            accounts = await Api.GetFromJsonAsync<List<BankAccountDto>>("api/BankAccounts")
+                       ?? new List<BankAccountDto>();
+
+            // Erstes Konto automatisch wählen (falls vorhanden)
+            if (accounts.Count > 0 && BankAccountId == 0)
+                BankAccountId = accounts[0].Id;
+        }
+        catch (Exception ex)
+        {
+            error = $"Konten konnten nicht geladen werden: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+
+        // OPTIONAL: Diagramm direkt beim Start laden
+        if (!IsExportDisabled)
+            await LoadChart();
+    }
+
+    private string BuildApi(string relative)
+        => new Uri(Api.BaseAddress!, relative).ToString();
+
+    private async Task LoadChart()
+    {
+        if (IsExportDisabled) return;
+        error = null;
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var year = SelectedDate.Year;
+            var month = SelectedDate.Month;
+
+            var data = await Api.GetFromJsonAsync<List<DailyPoint>>(
+                $"api/TransactionExport/monthly-chart-data?bankAccountId={BankAccountId}&year={year}&month={month}");
+
+            if (data is null || data.Count == 0)
+            {
+                await JS.InvokeVoidAsync("transactionsExport.clearChart", "monthlyChart");
+                error = $"Keine Daten für {month:D2}.{year}. Wähle einen anderen Monat.";
+                return;
+            }
+
+            var labels = data.Select(d => d.Day.ToString()).ToArray();
+            var income = data.Select(d => (double)d.Einnahmen).ToArray();
+            var expenses = data.Select(d => Math.Abs((double)d.Ausgaben)).ToArray();
+
+            await JS.InvokeVoidAsync("transactionsExport.renderMonthlyChart",
+                "monthlyChart", labels, income, expenses,
+                $"{month:D2}.{year} (Konto {BankAccountId})");
+        }
+        catch (Exception ex)
+        {
+            error = $"Fehler beim Laden des Diagramms: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void QuickSelectMonth(int offset)
+    {
+        var dt = DateTime.UtcNow.AddMonths(offset);
+        SelectedDate = new DateTime(dt.Year, dt.Month, 1);
+    }
+
+    private void ExportExcel()
+    {
+        if (IsExportDisabled) return;
+        var url = BuildApi($"api/TransactionExport/excel?bankAccountId={BankAccountId}");
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+
+    private void ExportPdf()
+    {
+        if (IsExportDisabled) return;
+        var url = BuildApi($"api/TransactionExport/pdf?bankAccountId={BankAccountId}");
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+
+    private class DailyPoint
+    {
+        public int Day { get; set; }
+        public decimal Einnahmen { get; set; }
+        public decimal Ausgaben { get; set; }
+    }
+}

@@ -1,0 +1,110 @@
+﻿@page "/transactions"
+@using OnlineBankingApp.Application.Dtos.Transactions
+@inject IHttpClientFactory ClientFactory
+
+<div class="d-flex align-items-center mb-3">
+    <h3 class="mb-0 me-3">📒 Transaktionen <small class="text-muted">Übersicht</small></h3>
+    <NavLink class="btn btn-sm btn-primary" href="/transactions/new">
+        ➕ Neue Transaktion
+    </NavLink>
+</div>
+
+@if (isLoading)
+{
+    <p><em>Lade...</em></p>
+}
+else if (transactions == null || !transactions.Any())
+{
+    <div class="alert alert-info">Keine Transaktionen vorhanden.</div>
+}
+else
+{
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Datum</th>
+                <th>Betrag</th>
+                <th>Beschreibung</th>
+                <th>Konto</th>
+                <th>Typ</th>
+                <th class="text-center">Aktion</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in transactions)
+            {
+                <tr>
+                    <td>@t.Date.ToLocalTime().ToString("g")</td>
+                    <td>@t.Amount.ToString("C")</td>
+                    <td>@t.Description</td>
+                    <td>@t.AccountHolder</td>
+                    <td>@t.Type</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(t.Id)">
+                            🗑️ Löschen
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TransactionDto>? transactions;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTransactionsAsync();
+    }
+
+    private async Task LoadTransactionsAsync()
+    {
+        try
+        {
+            var client = ClientFactory.CreateClient("ApiClient");
+            transactions = await client.GetFromJsonAsync<List<TransactionDto>>("api/transactions");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fehler beim Laden der Transaktionen: {ex.Message}");
+            transactions = new List<TransactionDto>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ConfirmDelete(int id)
+    {
+        if (!await JsConfirm("Möchten Sie diese Transaktion wirklich löschen?"))
+            return;
+
+        await DeleteTransaction(id);
+    }
+
+    private async Task DeleteTransaction(int id)
+    {
+        var client = ClientFactory.CreateClient("ApiClient");
+        var response = await client.DeleteAsync($"api/transactions/{id}");
+
+        if (response.IsSuccessStatusCode)
+        {
+            transactions = transactions!.Where(t => t.Id != id).ToList();
+        }
+        else
+        {
+            Console.WriteLine("❌ Fehler beim Löschen der Transaktion");
+        }
+    }
+
+    // Einfaches JS-Interop für Bestätigung
+    [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
+
+    private async Task<bool> JsConfirm(string message)
+    {
+        return await JSRuntime.InvokeAsync<bool>("confirm", message);
+    }
+}

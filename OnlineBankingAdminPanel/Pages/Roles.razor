@@ -1,0 +1,267 @@
+﻿@page "/roles"
+@attribute [Authorize(Roles = "Admin")]
+@using System.Net.Http.Json
+@inject IHttpClientFactory ClientFactory
+@inject IAuthService AuthService
+@inject NavigationManager Nav
+@using OnlineBankingAdminPanel.Services
+<h3>Rollenverwaltung</h3>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (isLoading)
+{
+    <p><em>Lade Rollen…</em></p>
+}
+else
+{
+    @if (!supportsCrud)
+    {
+        <div class="alert alert-warning">
+            Die API scheint <strong>keine</strong> Endpunkte zum Anlegen/Löschen von Rollen bereitzustellen.
+            Es werden nur vorhandene Rollen angezeigt.
+        </div>
+    }
+
+    <div class="d-flex align-items-center mb-3">
+        <input class="form-control w-auto" placeholder="Neue Rolle…" @bind="newRole" />
+        <button class="btn btn-primary ms-2" @onclick="Create" disabled="@(!supportsCrud)">Hinzufügen</button>
+    </div>
+
+    @if (roles.Count == 0)
+    {
+        <p>Keine Rollen gefunden.</p>
+    }
+    else
+    {
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th style="width: 140px;">Aktionen</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in roles)
+                {
+                    <tr>
+                        <td>@r.Name</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => Delete(r.Id)"
+                                    disabled="@(!supportsCrud || string.IsNullOrWhiteSpace(r.Id))">
+                                Löschen
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@if (showToast)
+{
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1080">
+        <div class="toast text-white @toastCssClass show" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">@toastMessage</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" @onclick="() => showToast = false"></button>
+            </div>
+        </div>
+    </div>
+}
+
+@code
+{
+    // ---- VM ----
+    private sealed class RoleVm
+    {
+        // Identity-Rollen haben i. d. R. string-IDs (GUID) – int würde hier krachen
+        public string? Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    // ---- State ----
+    private readonly List<RoleVm> roles = new();
+    private string newRole = "";
+    private bool isLoading = true;
+    private string? error;
+
+    // Wenn API keine Create/Delete-Endpunkte bietet, bleibt das false (nur Anzeige)
+    private bool supportsCrud = true;
+
+    // Toast
+    private bool showToast;
+    private string toastMessage = "";
+    private string toastCssClass = "bg-success";
+
+    // Immer ungeschützten Client + Header manuell setzen (gleiche Strategie wie UserManagement)
+    private async Task<HttpClient> ApiAsync()
+    {
+        var client = ClientFactory.CreateClient("ApiClient");
+        var token = await AuthService.GetTokenAsync();
+        if (!string.IsNullOrWhiteSpace(token))
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    // Wichtig: erst nach dem ersten Render, damit Token/Interop bereit sind
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadRoles();
+        StateHasChanged();
+    }
+
+    private async Task LoadRoles()
+    {
+        isLoading = true; error = null;
+
+        try
+        {
+            var api = await ApiAsync();
+
+            // 1) bevorzugt: /api/roles (falls ein RolesController existiert)
+            var ok = await TryLoadFrom(api, "api/roles");
+
+            // 2) Fallback: /api/users/roles (dein UsersController liefert {Id, Name})
+            if (!ok)
+            {
+                ok = await TryLoadFrom(api, "api/users/roles");
+            }
+
+            // 3) Letzter Fallback: /api/auth/roles liefert evtl. nur string-Liste
+            if (!ok)
+            {
+                try
+                {
+                    var names = await api.GetFromJsonAsync<List<string>>("api/auth/roles");
+                    roles.Clear();
+                    foreach (var n in names ?? new())
+                        roles.Add(new RoleVm { Id = null, Name = n });
+                    supportsCrud = false; // nur Anzeige möglich
+                    ok = true;
+                }
+                catch { /* ignorieren */ }
+            }
+
+            if (!ok)
+            {
+                error = "Konnte keine Rollen laden (keine passende API gefunden).";
+            }
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            error = "Keine Berechtigung (401/403). Bitte neu anmelden.";
+        }
+        catch (Exception ex)
+        {
+            error = $"Fehler beim Laden: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task<bool> TryLoadFrom(HttpClient api, string url)
+    {
+        try
+        {
+            var list = await api.GetFromJsonAsync<List<RoleVm>>(url);
+            if (list is null) return false;
+
+            roles.Clear();
+            roles.AddRange(list);
+
+            // Nur wenn die Quelle /api/roles war, gehen wir von CRUD-Support aus
+            supportsCrud = url.Equals("api/roles", StringComparison.OrdinalIgnoreCase);
+            return true;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+    }
+
+    private async Task Create()
+    {
+        if (!supportsCrud) { ShowToast("Anlegen wird von der API nicht unterstützt.", true); return; }
+        if (string.IsNullOrWhiteSpace(newRole)) return;
+
+        try
+        {
+            var api = await ApiAsync();
+            var resp = await api.PostAsJsonAsync("api/roles", new { Name = newRole.Trim() });
+
+            if (resp.IsSuccessStatusCode)
+            {
+                newRole = "";
+                await LoadRoles();
+                ShowToast("Rolle erstellt.");
+            }
+            else if ((int)resp.StatusCode == 409)
+            {
+                ShowToast("Rolle existiert bereits.", true);
+            }
+            else
+            {
+                ShowToast($"Erstellen fehlgeschlagen: {(int)resp.StatusCode} {resp.StatusCode}", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Fehler beim Erstellen: {ex.Message}", true);
+        }
+    }
+
+    private async Task Delete(string? id)
+    {
+        if (!supportsCrud) { ShowToast("Löschen wird von der API nicht unterstützt.", true); return; }
+        if (string.IsNullOrWhiteSpace(id)) { ShowToast("Ungültige Rollen-ID.", true); return; }
+
+        try
+        {
+            var api = await ApiAsync();
+            var resp = await api.DeleteAsync($"api/roles/{id}");
+
+            if (resp.IsSuccessStatusCode)
+            {
+                await LoadRoles();
+                ShowToast("Rolle gelöscht.");
+            }
+            else if ((int)resp.StatusCode == 409)
+            {
+                ShowToast("Rolle ist Benutzern zugewiesen und kann nicht gelöscht werden.", true);
+            }
+            else
+            {
+                ShowToast($"Löschen fehlgeschlagen: {(int)resp.StatusCode} {resp.StatusCode}", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Fehler beim Löschen: {ex.Message}", true);
+        }
+    }
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        toastMessage = message;
+        toastCssClass = isError ? "bg-danger" : "bg-success";
+        showToast = true;
+
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(2500);
+            showToast = false;
+            StateHasChanged();
+        });
+    }
+}

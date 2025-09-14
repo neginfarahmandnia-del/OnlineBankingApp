@@ -1,0 +1,97 @@
+﻿@page "/login"
+@using System.ComponentModel.DataAnnotations
+@using OnlineBankingAdminPanel.Models.Auth
+@inject IAuthService AuthService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ILogger<Login> Logger
+@using OnlineBankingAdminPanel.Services
+<h3>Anmeldung</h3>
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="alert alert-danger">@ErrorMessage</div>
+}
+
+<EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label">E-Mail</label>
+        <InputText class="form-control" @bind-Value="loginModel.Email" disabled="@isBusy" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Passwort</label>
+        <InputText class="form-control" type="password" @bind-Value="loginModel.Password" disabled="@isBusy" />
+    </div>
+
+    <button class="btn btn-primary" type="submit" disabled="@isBusy">
+        @(isBusy ? "Anmelden…" : "Anmelden")
+    </button>
+</EditForm>
+
+@code {
+    private LoginModel loginModel = new();
+    private string? ErrorMessage;
+    private bool isBusy;
+
+    private async Task HandleLogin()
+    {
+        ErrorMessage = null;
+        isBusy = true;
+        try
+        {
+            // Wichtig: Den LoginRequest aus deinem Models/Auth-Namespace verwenden
+            var request = new LoginRequest
+            {
+                Email = loginModel.Email,
+                Password = loginModel.Password
+            };
+
+            var result = await AuthService.LoginAsync(request);
+
+            if (result.Success)
+            {
+                Logger.LogInformation("Login erfolgreich für {Email}", loginModel.Email);
+
+                // AuthState sofort aktualisieren: Token aus dem AuthService holen
+                var token = await AuthService.GetTokenAsync();
+                if (token is not null && AuthStateProvider is OnlineBankingAdminPanel.Services.CustomAuthStateProvider custom)
+                {
+                    await custom.SetTokenAsync(token);
+                    Navigation.NavigateTo("/dashboard");               // normal navigieren
+                }
+                else
+                {
+                    // Fallback: Seite hart neu laden, dann liest der Provider das Token aus der Session
+                    Navigation.NavigateTo("/dashboard", forceLoad: true);
+                }
+            }
+            else
+            {
+                ErrorMessage = result.ErrorMessage ?? "Login fehlgeschlagen.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Fehler beim Login: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    // Form-Model
+    private class LoginModel
+    {
+        [Required(ErrorMessage = "E-Mail ist erforderlich.")]
+        [EmailAddress(ErrorMessage = "Ungültige E-Mail-Adresse.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Passwort ist erforderlich.")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

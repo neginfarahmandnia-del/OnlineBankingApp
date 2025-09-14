@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.6">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OnlineBankingApp.Application\OnlineBankingApp.Application.csproj" />
+    <ProjectReference Include="..\OnlineBankingApp.Domain\OnlineBankingApp.Domain.csproj" />
+    <ProjectReference Include="..\OnlineBankingApp.Infrastructure\OnlineBankingApp.Infrastructure.csproj" />
+    <ProjectReference Include="..\OnlineBankingApp.Shared\OnlineBankingApp.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

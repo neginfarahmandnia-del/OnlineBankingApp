@@ -1,0 +1,270 @@
+﻿@page "/users"
+@attribute [Authorize(Roles = "Admin,Manager")]
+@inject IHttpClientFactory ClientFactory
+@inject IAuthService AuthService
+@inject NavigationManager Nav
+@using System.Net.Http.Json
+@using System.Net.Http.Headers
+@using OnlineBankingApp.Shared.Dtos
+@using OnlineBankingAdminPanel.Services
+<h3>Benutzerverwaltung</h3>
+
+@if (!string.IsNullOrWhiteSpace(authInfo))
+{
+    <div class="alert alert-info">@authInfo</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger d-flex justify-content-between align-items-center">
+        <span>@error</span>
+        <div class="ms-3">
+            <button class="btn btn-sm btn-outline-secondary me-2" @onclick="Reload">Neu laden</button>
+            <a class="btn btn-sm btn-primary" href="/login">Zum Login</a>
+        </div>
+    </div>
+}
+
+@if (isLoading)
+{
+    <p><em>Lade Daten...</em></p>
+}
+else if (users is null || users.Count == 0)
+{
+    <p>Keine Benutzer gefunden.</p>
+}
+else
+{
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Abteilung</th>
+                <th style="width:110px">Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in users)
+            {
+                <tr>
+                    <td>@user.Email</td>
+                    <td>
+                        <select class="form-select"
+                                @onchange="async e => await UpdateAbteilung(user.Id, e.Value?.ToString())"
+                                disabled="@isBusy">
+                            <option value="">— Keine —</option>
+                            @if (abteilungen is not null)
+                            {
+                                @foreach (var abt in abteilungen)
+                                {
+                                    <option value="@abt.Id" selected="@(user.AbteilungId == abt.Id)">
+                                        @abt.Name
+                                    </option>
+                                }
+                            }
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" @onclick="() => ConfirmDelete(user)" disabled="@isBusy">
+                            🗑️ Löschen
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (showConfirm && userToDelete is not null)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Benutzer löschen</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Bist du sicher, dass du den Benutzer <strong>@userToDelete.Email</strong> löschen möchtest?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Abbrechen</button>
+                    <button class="btn btn-danger" @onclick="DeleteConfirmed" disabled="@isBusy">Löschen</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showToast)
+{
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div class="toast align-items-center text-white @toastCssClass show" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">@toastMessage</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" @onclick="() => showToast = false"></button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<UserDto>? users;
+    private List<AbteilungDto>? abteilungen;
+
+    private bool isLoading = true;
+    private bool isBusy = false;
+    private string? error;
+    private string? authInfo;
+
+    private bool showConfirm = false;
+    private UserDto? userToDelete;
+
+    private bool showToast = false;
+    private string toastMessage = "";
+    private string toastCssClass = "bg-success";
+
+    // ---- Hilfsfunktion: holt Client + hängt JWT an ----
+    private async Task<HttpClient> GetApiAsync()
+    {
+        var client = ClientFactory.CreateClient("ApiClient");   // BaseAddress: https://localhost:7202/
+        var token = await AuthService.GetTokenAsync();         // kommt aus ITokenStore/Session
+        if (!string.IsNullOrWhiteSpace(token))
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task Reload()
+    {
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true; error = null; authInfo = null;
+
+        try
+        {
+            var api = await GetApiAsync();
+
+            // 1) Diagnose
+            var me = await api.GetFromJsonAsync<AuthMe>("api/auth/me");
+            authInfo = me is null
+                ? "Auth-Check: keine Antwort."
+                : $"Angemeldet als: {me.email} (UserId: {me.userId})";
+
+            // 2) Daten parallel
+            var usersTask = api.GetFromJsonAsync<List<UserDto>>("api/users");
+            var abtTask = api.GetFromJsonAsync<List<AbteilungDto>>("api/abteilungen");
+            await Task.WhenAll(usersTask!, abtTask!);
+
+            users = usersTask!.Result ?? new();
+            abteilungen = abtTask!.Result ?? new();
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            error = "Keine Berechtigung (401/403). Bitte Seite neu laden oder erneut anmelden.";
+            return;
+        }
+        catch (Exception ex)
+        {
+            error = $"Fehler beim Laden der Daten: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task UpdateAbteilung(string userId, string? abteilungIdRaw)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return;
+
+        try
+        {
+            isBusy = true;
+            var api = await GetApiAsync();
+
+            int? abteilungId = null;
+            if (!string.IsNullOrWhiteSpace(abteilungIdRaw) && int.TryParse(abteilungIdRaw, out var v))
+                abteilungId = v;
+
+            var resp = await api.PutAsJsonAsync($"api/users/{userId}/abteilung", new { AbteilungId = abteilungId });
+            if (resp.IsSuccessStatusCode) ShowToast("Abteilung erfolgreich aktualisiert!");
+            else ShowToast($"Fehler beim Aktualisieren ({resp.StatusCode})", true);
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            error = "Keine Berechtigung (401/403). Bitte neu anmelden.";
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Fehler beim Aktualisieren: {ex.Message}", true);
+        }
+        finally { isBusy = false; }
+    }
+
+    private void ConfirmDelete(UserDto user) { userToDelete = user; showConfirm = true; }
+    private void CancelDelete() { userToDelete = null; showConfirm = false; }
+
+    private async Task DeleteConfirmed()
+    {
+        if (userToDelete is null) return;
+
+        try
+        {
+            isBusy = true;
+            var api = await GetApiAsync();
+
+            var resp = await api.DeleteAsync($"api/users/{userToDelete.Id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                users!.Remove(userToDelete);
+                ShowToast($"Benutzer {userToDelete.Email} wurde gelöscht!");
+            }
+            else ShowToast($"Fehler beim Löschen ({resp.StatusCode})", true);
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            error = "Keine Berechtigung (401/403). Bitte neu anmelden.";
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Fehler beim Löschen: {ex.Message}", true);
+        }
+        finally
+        {
+            isBusy = false;
+            userToDelete = null;
+            showConfirm = false;
+        }
+    }
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        toastMessage = message;
+        toastCssClass = isError ? "bg-danger" : "bg-success";
+        showToast = true;
+
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Delay(3000);
+            showToast = false;
+            StateHasChanged();
+        });
+    }
+
+    private sealed class AuthMe { public string? userId { get; set; } public string? email { get; set; } }
+}

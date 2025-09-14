@@ -1,0 +1,36 @@
+﻿@page "/"
+@page "/index"
+
+<PageTitle>Startseite</PageTitle>
+
+@if (!isAuthenticated)
+{
+    <h1>Willkommen zur Online Banking App</h1>
+    <p>Bitte <NavLink href="/login">einloggen</NavLink> oder <NavLink href="/register">registrieren</NavLink>, um fortzufahren.</p>
+}
+else
+{
+    <h1>Willkommen zurück, @userName!</h1>
+    <NavLink class="btn btn-primary" href="/dashboard">Zum Dashboard</NavLink>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool isAuthenticated;
+    private string? userName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+
+            isAuthenticated = user.Identity?.IsAuthenticated ?? false;
+            if (isAuthenticated)
+                userName = user.Identity?.Name;
+        }
+    }
+}

@@ -1,0 +1,35 @@
+﻿@page "/dashboard"
+@inject IJSRuntime JS
+
+<h3>📊 Dashboard Übersicht</h3>
+@inject NavigationManager Navigation
+
+<div class="d-flex flex-column gap-2">
+    <button class="btn btn-primary" @onclick="@(() => Navigation.NavigateTo("/dashboard"))">🏠 Dashboard</button>
+    <button class="btn btn-secondary" @onclick="@(() => Navigation.NavigateTo("/transactions"))">💳 Transaktionen</button>
+    <button class="btn btn-danger" @onclick="@(() => Navigation.NavigateTo("/logout"))">🚪 Abmelden</button>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <canvas id="pieChart"></canvas>
+    </div>
+    <div class="col-md-4">
+        <canvas id="barChart"></canvas>
+    </div>
+    <div class="col-md-4">
+        <canvas id="doughnutChart"></canvas>
+    </div>
+</div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("ChartInterop.initPieChart", "pieChart", new[] { "Checking", "Savings", "Credit" }, new[] { 300, 200, 100 });
+            await JS.InvokeVoidAsync("ChartInterop.initBarChart", "barChart", new[] { "Jan", "Feb", "Mar" }, new[] { 5000, 8000, 4000 });
+            await JS.InvokeVoidAsync("ChartInterop.initDoughnutChart", "doughnutChart", new[] { "Active", "Blocked" }, new[] { 12, 3 });
+        }
+    }
+}

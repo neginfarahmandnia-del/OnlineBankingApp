@@ -1,0 +1,100 @@
+﻿@page "/transactions/new"
+@using OnlineBankingApp.Application.Dtos.Transactions
+@using OnlineBankingApp.Domain.Entities
+@using System.ComponentModel.DataAnnotations
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<h3>Neue Transaktion anlegen</h3>
+
+<EditForm Model="transaction" OnValidSubmit="HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label for="bankAccountId" class="form-label">Bankkonto-ID</label>
+        <InputNumber @bind-Value="transaction.BankAccountId" class="form-control" id="bankAccountId" />
+    </div>
+
+    <div class="mb-3">
+        <label for="amount" class="form-label">Betrag</label>
+        <InputNumber @bind-Value="transaction.Amount" class="form-control" id="amount" />
+    </div>
+
+    <div class="mb-3">
+        <label for="type" class="form-label">Transaktionstyp</label>
+        <InputSelect @bind-Value="transaction.Type" class="form-select" id="type">
+            @foreach (TransactionType value in Enum.GetValues(typeof(TransactionType)))
+            {
+                <option value="@value">@GetDisplayName(value)</option>
+            }
+        </InputSelect>
+    </div>
+
+    <div class="mb-3">
+        <label for="category" class="form-label">Kategorie</label>
+        <InputText @bind-Value="transaction.Category" class="form-control" id="category" />
+    </div>
+
+    <div class="mb-3">
+        <label for="description" class="form-label">Verwendungszweck</label>
+        <InputText @bind-Value="transaction.Description" class="form-control" id="description" />
+    </div>
+
+    <div class="mb-3">
+        <label for="date" class="form-label">Datum</label>
+        <InputDate @bind-Value="transaction.Date" class="form-control" id="date" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">Speichern</button>
+    <button type="button" class="btn btn-secondary ms-2" @onclick="ZurueckZurListe">Abbrechen</button>
+</EditForm>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">@errorMessage</div>
+}
+
+@code {
+    private CreateTransactionRequest transaction = new()
+    {
+        Date = DateTime.Today,
+        Type = TransactionType.Deposit // Standardwert
+    };
+
+    private string? errorMessage;
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/transactions", transaction);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/transactions");
+            }
+            else
+            {
+                errorMessage = $"Fehler: {response.ReasonPhrase}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fehler: {ex.Message}";
+        }
+    }
+
+    private void ZurueckZurListe()
+    {
+        Navigation.NavigateTo("/transactions");
+    }
+
+    private string GetDisplayName(TransactionType type)
+    {
+        var field = type.GetType().GetField(type.ToString());
+        var displayAttribute = field?.GetCustomAttributes(typeof(DisplayAttribute), false)
+                                   .FirstOrDefault() as DisplayAttribute;
+        return displayAttribute?.Name ?? type.ToString();
+    }
+}

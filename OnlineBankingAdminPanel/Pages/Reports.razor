@@ -1,0 +1,204 @@
+﻿@page "/reports"
+@attribute [Authorize]
+@inject IHttpClientFactory ClientFactory
+@inject ProtectedSessionStorage Session
+@inject IJSRuntime JS
+
+<h3>📊 Monatsauswertungen</h3>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+@if (isLoading)
+{
+    <p><em>Lade Daten…</em></p>
+}
+else if (points.Count == 0)
+{
+    <div class="alert alert-info">Keine Daten vorhanden.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <canvas id="monthlyChart" height="120"></canvas>
+        </div>
+    </div>
+
+    <table class="table table-sm table-striped">
+        <thead>
+            <tr>
+                <th>Monat</th>
+                <th class="text-end">Einnahmen</th>
+                <th class="text-end">Ausgaben</th>
+                <th class="text-end">Saldo</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in points)
+            {
+                <tr>
+                    <td>@p.MonthLabel</td>
+                    <td class="text-end">@p.Income.ToString("N2")</td>
+                    <td class="text-end">@p.Expense.ToString("N2")</td>
+                    <td class="text-end fw-semibold">@p.Balance.ToString("N2")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code
+{
+    // ---- ViewModel (robust gegen Backend-Änderungen) ----
+    private sealed class MonthlyPoint
+    {
+        // vom Backend: "month" oder "monthLabel" o.ä.
+        public string? Month { get; set; }           // z.B. "2025-01"
+        public string? MonthLabel { get; set; }      // z.B. "Jan 2025"
+        public decimal Income { get; set; }
+        public decimal Expense { get; set; }
+        public decimal Balance { get; set; }         // falls Backend liefert, sonst berechnet
+    }
+
+    private readonly List<MonthlyPoint> points = new();
+    private bool isLoading = true;
+    private string? error;
+
+    // Wichtig: Nach dem ersten Render laden (dann ist JS/Interop & Session stabil)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true; error = null;
+
+        try
+        {
+            var client = ClientFactory.CreateClient("ApiClient");
+
+            // JWT aus Session anhängen
+            var tokenRes = await Session.GetAsync<string>("authToken");
+            var token = tokenRes.Success ? tokenRes.Value : null;
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+
+            // Daten laden
+            var data = await client.GetFromJsonAsync<List<MonthlyPoint>>(
+                "api/TransactionExport/monthly-chart-data");
+
+            points.Clear();
+            if (data is not null)
+            {
+                foreach (var d in data)
+                {
+                    // Falls MonthLabel fehlt, hübsch formatieren
+                    var label = !string.IsNullOrWhiteSpace(d.MonthLabel)
+                        ? d.MonthLabel!
+                        : FormatMonth(d.Month);
+
+                    var balance = d.Balance != 0 ? d.Balance : (d.Income - d.Expense);
+
+                    points.Add(new MonthlyPoint
+                    {
+                        Month = d.Month,
+                        MonthLabel = label,
+                        Income = d.Income,
+                        Expense = d.Expense,
+                        Balance = balance
+                    });
+                }
+            }
+
+            await RenderChart();
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode is System.Net.HttpStatusCode.Unauthorized
+                           or System.Net.HttpStatusCode.Forbidden)
+        {
+            // Nicht automatisch umleiten – Meldung zeigen
+            error = "Keine Berechtigung (401/403). Bitte aktualisieren oder neu anmelden.";
+        }
+        catch (Exception ex)
+        {
+            error = $"Fehler beim Laden der Auswertung: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string FormatMonth(string? raw)
+    {
+        // erwartet "YYYY-MM" -> "MMM yyyy" (de-DE)
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        try
+        {
+            var parts = raw.Split('-', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2 &&
+                int.TryParse(parts[0], out var y) &&
+                int.TryParse(parts[1], out var m))
+            {
+                var dt = new DateTime(y, m, 1);
+                return dt.ToString("MMM yyyy", new System.Globalization.CultureInfo("de-DE"));
+            }
+        }
+        catch { /* ignore */ }
+        return raw;
+    }
+
+    private async Task RenderChart()
+    {
+        if (points.Count == 0) return;
+
+        var labels = points.Select(p => p.MonthLabel ?? "").ToArray();
+        var incomes = points.Select(p => (double)p.Income).ToArray();
+        var expenses = points.Select(p => (double)p.Expense).ToArray();
+        var balances = points.Select(p => (double)p.Balance).ToArray();
+
+        await JS.InvokeVoidAsync("renderMonthlyReportChart", "monthlyChart", labels, incomes, expenses, balances);
+    }
+}
+
+@* Kleines Interop-Snippet – nutzt globales Chart.js (ist bei dir im _Host eingebunden) *@
+<script>
+    window.renderMonthlyReportChart = function (elId, labels, income, expenses, balance) {
+        const el = document.getElementById(elId);
+        if (!el) return;
+
+        const ctx = el.getContext('2d');
+
+        if (window.__monthlyChart) {
+            window.__monthlyChart.destroy();
+        }
+
+        window.__monthlyChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Einnahmen', data: income },
+                    { label: 'Ausgaben', data: expenses },
+                    { type: 'line', label: 'Saldo', data: balance }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
+        });
+    };
+</script>

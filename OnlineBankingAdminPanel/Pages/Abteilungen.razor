@@ -1,0 +1,136 @@
+﻿@page "/abteilungen"
+@inject IHttpClientFactory HttpClientFactory
+@using OnlineBankingApp.Shared.Dtos
+
+<h3>Abteilungen</h3>
+
+@if (abteilungen == null)
+{
+    <p><em>Lade Abteilungen...</em></p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Aktionen</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var abt in abteilungen)
+            {
+                <tr>
+                    <td>@abt.Id</td>
+                    <td>
+                        @if (editId == abt.Id)
+                        {
+                            <input @bind="editName" class="form-control" />
+                        }
+                        else
+                        {
+                            @abt.Name
+                        }
+                    </td>
+                    <td>
+                        @if (editId == abt.Id)
+                        {
+                            <button class="btn btn-success btn-sm" @onclick="() => SaveEdit(abt.Id)">Speichern</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="CancelEdit">Abbrechen</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-warning btn-sm" @onclick="() => Edit(abt)">Bearbeiten</button>
+                            <button class="btn btn-danger btn-sm" @onclick="() => Delete(abt.Id)">Löschen</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h4>Neue Abteilung</h4>
+    <input @bind="newName" placeholder="Name der Abteilung" class="form-control" />
+    <button class="btn btn-primary mt-2" @onclick="Create">Hinzufügen</button>
+}
+
+@code {
+    private List<AbteilungDto>? abteilungen;
+
+    // Für Create
+    private string newName = string.Empty;
+
+    // Für Edit
+    private int? editId = null;
+    private string editName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("ApiClient");
+            abteilungen = await client.GetFromJsonAsync<List<AbteilungDto>>("api/abteilungen");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fehler: {ex.Message}");
+        }
+    }
+
+    private async Task Create()
+    {
+        if (string.IsNullOrWhiteSpace(newName)) return;
+
+        var client = HttpClientFactory.CreateClient("ApiClient");
+        var dto = new AbteilungDto { Name = newName };
+
+        var response = await client.PostAsJsonAsync("api/abteilungen", dto);
+        if (response.IsSuccessStatusCode)
+        {
+            newName = string.Empty;
+            await LoadData();
+        }
+    }
+
+    private void Edit(AbteilungDto abt)
+    {
+        editId = abt.Id;
+        editName = abt.Name;
+    }
+
+    private void CancelEdit()
+    {
+        editId = null;
+        editName = string.Empty;
+    }
+
+    private async Task SaveEdit(int id)
+    {
+        var client = HttpClientFactory.CreateClient("ApiClient");
+        var dto = new AbteilungDto { Id = id, Name = editName };
+
+        var response = await client.PutAsJsonAsync($"api/abteilungen/{id}", dto);
+        if (response.IsSuccessStatusCode)
+        {
+            editId = null;
+            editName = string.Empty;
+            await LoadData();
+        }
+    }
+
+    private async Task Delete(int id)
+    {
+        var client = HttpClientFactory.CreateClient("ApiClient");
+        var response = await client.DeleteAsync($"api/abteilungen/{id}");
+        if (response.IsSuccessStatusCode)
+        {
+            await LoadData();
+        }
+    }
+}
