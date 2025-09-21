@@ -488,3 +488,6 @@ appsettings.Local.json
 appsettings.Development.json
 appsettings.Development.json
 *.user
+appsettings.json
+OnlineBankingApp.API/appsettings.json
+OnlineBankingAdminPanel/appsettings.json
