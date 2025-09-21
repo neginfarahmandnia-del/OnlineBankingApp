@@ -11,7 +11,8 @@ using OnlineBankingApp.Application.Interfaces;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Security.Claims;
-
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 namespace OnlineBankingApp.API
 {
     public class Program
@@ -137,6 +138,10 @@ namespace OnlineBankingApp.API
             });
 
             var app = builder.Build();
+            app.UseForwardedHeaders(new ForwardedHeadersOptions
+            {
+                ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+            });
 
             // ---------- Seeding ----------
             using (var scope = app.Services.CreateScope())
@@ -172,7 +177,8 @@ namespace OnlineBankingApp.API
             app.UseAuthorization();
 
             app.MapControllers();
-
+            app.MapGet("/", () => Results.Ok("OK"));
+            app.MapGet("/healthz", () => Results.Ok("OK"));
             await app.RunAsync();
         }
 
