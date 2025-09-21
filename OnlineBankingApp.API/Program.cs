@@ -21,13 +21,32 @@ namespace OnlineBankingApp.API
             var builder = WebApplication.CreateBuilder(args);
             var config = builder.Configuration;
 
-            // ---------------- DB ----------------
-            builder.Services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlServer(config.GetConnectionString("DefaultConnection")));
+            // Umschalter: InMemory-DB auf Render (oder lokal)
+            var useInMemory = string.Equals(
+                Environment.GetEnvironmentVariable("USE_INMEMORY_DB"),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
 
-            // -------------- Identity ------------
-            // -------------- Identity ------------
-            // -------------- IdentityCore (ohne Cookies) ------------
+            // ---------------- DB ----------------
+            if (useInMemory)
+            {
+                builder.Services.AddDbContext<ApplicationDbContext>(opt =>
+                    opt.UseInMemoryDatabase("DemoDb"));
+            }
+            else
+            {
+                var connStr = config.GetConnectionString("DefaultConnection");
+                if (string.IsNullOrWhiteSpace(connStr))
+                {
+                    // Saubere Fehlermeldung, statt späterem Crash „ConnectionString not initialized“
+                    throw new InvalidOperationException("No ConnectionStrings:DefaultConnection configured and USE_INMEMORY_DB != true.");
+                }
+
+                builder.Services.AddDbContext<ApplicationDbContext>(opt =>
+                    opt.UseSqlServer(connStr));
+            }
+
+            // -------------- Identity (Core) ------------
             builder.Services
                 .AddIdentityCore<ApplicationUser>(opts =>
                 {
@@ -40,9 +59,8 @@ namespace OnlineBankingApp.API
                 })
                 .AddRoles<IdentityRole>()
                 .AddEntityFrameworkStores<ApplicationDbContext>()
-                .AddSignInManager()           // für _signInManager.CheckPasswordSignInAsync(...)
+                .AddSignInManager()
                 .AddDefaultTokenProviders();
-
 
             // -------------- AuthZ (Policies) ----
             builder.Services.AddAuthorization(options =>
@@ -51,8 +69,8 @@ namespace OnlineBankingApp.API
             });
 
             // -------------- JWT AuthN -----------
-            var jwtKey = config["Jwt:Key"] ?? throw new Exception("JWT key not set in config");
-
+            // Hinweis: Auf Render als EnvVar "Jwt__Key" setzen (Doppel-Unterstrich!)
+            var jwtKey = config["Jwt:Key"] ?? throw new Exception("JWT key not set (Jwt:Key).");
             builder.Services.AddAuthentication(options =>
             {
                 options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -67,8 +85,6 @@ namespace OnlineBankingApp.API
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-
-                    // wichtig für [Authorize(Roles="...")]
                     NameClaimType = ClaimTypes.Name,
                     RoleClaimType = ClaimTypes.Role
                 };
@@ -89,6 +105,8 @@ namespace OnlineBankingApp.API
             builder.Services.AddScoped<ITransactionService, TransactionService>();
             builder.Services.AddScoped<IGreetingService, GreetingService>();
             builder.Services.AddHostedService<KontostandPruefer>();
+
+            // Achtung: Dieser HttpClient zeigt auf localhost – in der Cloud ggf. nicht sinnvoll.
             builder.Services.AddHttpClient("BackendAPI", c =>
             {
                 c.BaseAddress = new Uri("https://localhost:5001/api/");
@@ -124,13 +142,21 @@ namespace OnlineBankingApp.API
             using (var scope = app.Services.CreateScope())
             {
                 var sp = scope.ServiceProvider;
-                await Data.DbSeeder.SeedTestUser(sp);
-            }
-            using (var scope = app.Services.CreateScope())
-            {
-                var sp = scope.ServiceProvider;
                 var logger = sp.GetRequiredService<ILogger<Program>>();
-                await SeedRolesAndAdminUser(sp, logger);
+
+                if (useInMemory)
+                {
+                    // InMemory: Seeding OK
+                    await Data.DbSeeder.SeedTestUser(sp);
+                    await SeedRolesAndAdminUser(sp, logger);
+                }
+                else
+                {
+                    // Nur wenn echte DB vorhanden (Migration/Seeding optional):
+                    var db = sp.GetRequiredService<ApplicationDbContext>();
+                    await db.Database.MigrateAsync(); // falls Migrationen vorhanden
+                    await SeedRolesAndAdminUser(sp, logger);
+                }
             }
 
             // ---------- Pipeline ----------
@@ -142,8 +168,9 @@ namespace OnlineBankingApp.API
 
             app.UseHttpsRedirection();
             app.UseRouting();
-            app.UseAuthentication();   // vor Authorization!
+            app.UseAuthentication();
             app.UseAuthorization();
+
             app.MapControllers();
 
             await app.RunAsync();
