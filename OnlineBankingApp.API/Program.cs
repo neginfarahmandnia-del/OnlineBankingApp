@@ -13,6 +13,7 @@ using System.Text.Json.Serialization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
+
 namespace OnlineBankingApp.API
 {
     public class Program
@@ -22,7 +23,7 @@ namespace OnlineBankingApp.API
             var builder = WebApplication.CreateBuilder(args);
             var config = builder.Configuration;
 
-            // Umschalter: InMemory-DB auf Render (oder lokal)
+            // Umschalter: InMemory-DB
             var useInMemory = string.Equals(
                 Environment.GetEnvironmentVariable("USE_INMEMORY_DB"),
                 "true",
@@ -38,16 +39,13 @@ namespace OnlineBankingApp.API
             {
                 var connStr = config.GetConnectionString("DefaultConnection");
                 if (string.IsNullOrWhiteSpace(connStr))
-                {
-                    // Saubere Fehlermeldung, statt späterem Crash „ConnectionString not initialized“
                     throw new InvalidOperationException("No ConnectionStrings:DefaultConnection configured and USE_INMEMORY_DB != true.");
-                }
 
                 builder.Services.AddDbContext<ApplicationDbContext>(opt =>
                     opt.UseSqlServer(connStr));
             }
 
-            // -------------- Identity (Core) ------------
+            // -------------- Identity ------------
             builder.Services
                 .AddIdentityCore<ApplicationUser>(opts =>
                 {
@@ -63,14 +61,13 @@ namespace OnlineBankingApp.API
                 .AddSignInManager()
                 .AddDefaultTokenProviders();
 
-            // -------------- AuthZ (Policies) ----
+            // -------------- AuthZ ----------------
             builder.Services.AddAuthorization(options =>
             {
                 options.AddPolicy("CanManageUsers", p => p.RequireRole("Admin", "Manager"));
             });
 
-            // -------------- JWT AuthN -----------
-            // Hinweis: Auf Render als EnvVar "Jwt__Key" setzen (Doppel-Unterstrich!)
+            // -------------- JWT ------------------
             var jwtKey = config["Jwt:Key"] ?? throw new Exception("JWT key not set (Jwt:Key).");
             builder.Services.AddAuthentication(options =>
             {
@@ -106,16 +103,8 @@ namespace OnlineBankingApp.API
             builder.Services.AddScoped<ITransactionService, TransactionService>();
             builder.Services.AddScoped<IGreetingService, GreetingService>();
             builder.Services.AddHostedService<KontostandPruefer>();
-            builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
 
-            // Achtung: Dieser HttpClient zeigt auf localhost – in der Cloud ggf. nicht sinnvoll.
-            builder.Services.AddHttpClient("BackendAPI", c =>
-            {
-                c.BaseAddress = new Uri("https://localhost:5001/api/");
-            });
-
-            // -------------- Swagger --------------
+            // --- Swagger (einmalig registrieren) ---
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(c =>
             {
@@ -139,7 +128,15 @@ namespace OnlineBankingApp.API
                 });
             });
 
+            // Achtung: Dieser HttpClient zeigt auf localhost – in der Cloud meist nutzlos
+            builder.Services.AddHttpClient("BackendAPI", c =>
+            {
+                c.BaseAddress = new Uri("https://localhost:5001/api/");
+            });
+
             var app = builder.Build();
+
+            // Proxy-Header (Render)
             app.UseForwardedHeaders(new ForwardedHeadersOptions
             {
                 ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
@@ -153,38 +150,39 @@ namespace OnlineBankingApp.API
 
                 if (useInMemory)
                 {
-                    // InMemory: Seeding OK
                     await Data.DbSeeder.SeedTestUser(sp);
                     await SeedRolesAndAdminUser(sp, logger);
                 }
                 else
                 {
-                    // Nur wenn echte DB vorhanden (Migration/Seeding optional):
                     var db = sp.GetRequiredService<ApplicationDbContext>();
-                    await db.Database.MigrateAsync(); // falls Migrationen vorhanden
+                    await db.Database.MigrateAsync();
                     await SeedRolesAndAdminUser(sp, logger);
                 }
             }
 
             // ---------- Pipeline ----------
-            if (app.Environment.IsDevelopment())
+            // 👉 Swagger IMMER aktivieren, nicht nur Development
+            app.UseSwagger();
+            app.UseSwaggerUI(c =>
             {
-                app.UseSwagger();
-                app.UseSwaggerUI(c =>
-                {
-                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "OnlineBanking API v1");
-                    c.RoutePrefix = "swagger"; // also: /swagger und /swagger/index.html
-                });
-            }
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "OnlineBanking API v1");
+                c.RoutePrefix = "swagger"; // /swagger & /swagger/index.html
+            });
 
-            app.UseHttpsRedirection();
+            // HTTPS-Redirect kann hinter Render stören – optional deaktivieren:
+            // app.UseHttpsRedirection();
+
             app.UseRouting();
             app.UseAuthentication();
             app.UseAuthorization();
 
             app.MapControllers();
+
+            // Health & Root
             app.MapGet("/", () => Results.Ok("OK"));
             app.MapGet("/healthz", () => Results.Ok("OK"));
+
             await app.RunAsync();
         }
 
