@@ -106,6 +106,8 @@ namespace OnlineBankingApp.API
             builder.Services.AddScoped<ITransactionService, TransactionService>();
             builder.Services.AddScoped<IGreetingService, GreetingService>();
             builder.Services.AddHostedService<KontostandPruefer>();
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
 
             // Achtung: Dieser HttpClient zeigt auf localhost – in der Cloud ggf. nicht sinnvoll.
             builder.Services.AddHttpClient("BackendAPI", c =>
@@ -168,7 +170,11 @@ namespace OnlineBankingApp.API
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
-                app.UseSwaggerUI();
+                app.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "OnlineBanking API v1");
+                    c.RoutePrefix = "swagger"; // also: /swagger und /swagger/index.html
+                });
             }
 
             app.UseHttpsRedirection();
