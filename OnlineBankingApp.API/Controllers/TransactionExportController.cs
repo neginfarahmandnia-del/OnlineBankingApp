@@ -23,6 +23,7 @@ namespace OnlineBankingApp.API.Controllers
             _exportService = exportService;
         }
 
+     
         [HttpGet("excel")]
         public IActionResult ExportExcel([FromQuery] int bankAccountId)
         {
@@ -35,22 +36,45 @@ namespace OnlineBankingApp.API.Controllers
 
             var stream = _exportService.GenerateExcel(bankAccount);
 
-            return File(stream,
+            return File(
+                stream,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "export.xlsx");
+                "export.xlsx"
+            );
         }
+
 
 
 
 
 
         [HttpGet("pdf")]
-        public IActionResult ExportPdf(int bankAccountId)
+        public IActionResult ExportPdf([FromQuery] int bankAccountId)
         {
-            var konto = _context.BankAccounts.Include(k => k.Transactions).First(k => k.Id == bankAccountId);
-            var pdfBytes = KontoauszugGenerator.Generate(konto.Transactions, konto.Name, DateTime.Now.AddMonths(-1), DateTime.Now);
+            var konto = _context.BankAccounts
+                .Include(k => k.Transactions)
+                .FirstOrDefault(k => k.Id == bankAccountId);
+
+            if (konto == null)
+            {
+                return NotFound($"Kein Konto mit Id {bankAccountId} gefunden.");
+            }
+
+            if (!konto.Transactions.Any())
+            {
+                return BadRequest("Dieses Konto hat noch keine Transaktionen.");
+            }
+
+            var pdfBytes = KontoauszugGenerator.Generate(
+                konto.Transactions,
+                konto.Name,
+                DateTime.Now.AddMonths(-1),
+                DateTime.Now
+            );
+
             return File(pdfBytes, "application/pdf", "Kontoauszug.pdf");
         }
+
 
 
         // 3. Chart-Auswertung (LiveCharts, Chart.js oder Diagramm exportieren)

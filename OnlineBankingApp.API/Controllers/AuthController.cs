@@ -1,7 +1,7 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿// OnlineBankingApp.API/Controllers/AuthController.cs
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using OnlineBankingApp.Infrastructure.Identity;
 using System.IdentityModel.Tokens.Jwt;
@@ -18,11 +18,12 @@ namespace OnlineBankingApp.API.Controllers
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthController> _logger;
+
         public AuthController(
-     UserManager<ApplicationUser> userManager,
-     SignInManager<ApplicationUser> signInManager,
-     IConfiguration configuration,
-     ILogger<AuthController> logger) // ← richtige Klammer und kein Komma vorher
+            UserManager<ApplicationUser> userManager,
+            SignInManager<ApplicationUser> signInManager,
+            IConfiguration configuration,
+            ILogger<AuthController> logger)
         {
             _userManager = userManager;
             _signInManager = signInManager;
@@ -30,33 +31,36 @@ namespace OnlineBankingApp.API.Controllers
             _logger = logger;
         }
 
-
-        // 🔒 Nur eingeloggte Benutzer
+        // 🔒 Aktueller User inkl. Rollen
         [HttpGet("me")]
         [Authorize]
-        public IActionResult Me()
+        public async Task<IActionResult> Me()
         {
-            var email = User.FindFirst(ClaimTypes.Name)?.Value;
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var email = User.FindFirstValue(ClaimTypes.Name);
 
-            return Ok(new
+            IList<string> roles = Array.Empty<string>();
+            if (!string.IsNullOrEmpty(userId))
             {
-                userId = userId,
-                email = email
-            });
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user != null)
+                    roles = await _userManager.GetRolesAsync(user);
+            }
+
+            return Ok(new { userId, email, roles });
         }
 
-
-        // 🔒 Nur für Admins
+        // 🔒 Nur für Admins (Beispiel)
         [Authorize(Roles = "Admin")]
         [HttpGet("all-users")]
         public IActionResult GetAllUsers()
         {
             return Ok("Admin sieht alle Benutzer.");
         }
-        // 🔓 Öffentlich zugänglich oder nur für Admins – du entscheidest.
+
+        // 🔓 Rollenliste (hier nur Beispielwerte)
         [HttpGet("roles")]
-        [Authorize(Roles = "Admin")] // Optional: Entfernen für öffentliche Abfrage
+        [Authorize(Roles = "Admin")] // ggf. entfernen, wenn öffentlich
         public IActionResult GetAllRoles()
         {
             var roles = new List<string> { "Admin", "Manager", "Customer" };
@@ -71,13 +75,9 @@ namespace OnlineBankingApp.API.Controllers
 
             var user = new ApplicationUser { UserName = model.Email, Email = model.Email };
             var result = await _userManager.CreateAsync(user, model.Password);
+            if (!result.Succeeded) return BadRequest(result.Errors);
 
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            // Standardrolle setzen
             await _userManager.AddToRoleAsync(user, "Customer");
-
             return Ok("Registrierung erfolgreich.");
         }
 
@@ -112,44 +112,42 @@ namespace OnlineBankingApp.API.Controllers
             return Ok(new { token });
         }
 
-
-        // 🔄 Rollenänderung – nur Admins dürfen
+        // 🔄 Rollen ändern – nur Admin
         [Authorize(Roles = "Admin")]
         [HttpPut("change-role/{userId}")]
         public async Task<IActionResult> ChangeUserRole(string userId, [FromBody] ChangeRoleRequest model)
         {
             var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-                return NotFound("Benutzer nicht gefunden.");
+            if (user == null) return NotFound("Benutzer nicht gefunden.");
 
             var currentRoles = await _userManager.GetRolesAsync(user);
             var removeResult = await _userManager.RemoveFromRolesAsync(user, currentRoles);
-            if (!removeResult.Succeeded)
-                return BadRequest("Fehler beim Entfernen der alten Rolle.");
+            if (!removeResult.Succeeded) return BadRequest("Fehler beim Entfernen der alten Rolle.");
 
             var addResult = await _userManager.AddToRoleAsync(user, model.NewRole);
-            if (!addResult.Succeeded)
-                return BadRequest("Fehler beim Zuweisen der neuen Rolle.");
+            if (!addResult.Succeeded) return BadRequest("Fehler beim Zuweisen der neuen Rolle.");
 
             return Ok($"Rolle für Benutzer {user.Email} geändert zu {model.NewRole}.");
         }
 
-        // 📦 JWT-Erzeugung
+        // 📦 JWT
         private string GenerateJwtToken(ApplicationUser user, IList<string> roles)
         {
-            var jwtKey = _configuration["Jwt:Key"];
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey!));
+            var jwtKey = _configuration["Jwt:Key"] ?? throw new Exception("Jwt:Key not configured.");
+            if (Encoding.UTF8.GetByteCount(jwtKey) < 32)
+                throw new Exception("Jwt:Key must be at least 32 bytes.");
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
             var claims = new List<Claim>
-    {
-        new Claim(JwtRegisteredClaimNames.Sub, user.Id),
-        new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-        new Claim(ClaimTypes.NameIdentifier, user.Id),
-        new Claim(ClaimTypes.Name, user.Email ?? user.UserName ?? string.Empty)
-    };
-
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
+                new Claim(ClaimTypes.Name, user.Email ?? user.UserName ?? string.Empty)
+            };
             foreach (var role in roles)
-                claims.Add(new Claim(ClaimTypes.Role, role)); // <<< wichtig
+                claims.Add(new Claim(ClaimTypes.Role, role));
 
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             var token = new JwtSecurityToken(
@@ -160,10 +158,9 @@ namespace OnlineBankingApp.API.Controllers
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
-
     }
 
-    // 🔧 Hilfsklassen für Anfragen
+    // 🔧 DTOs
     public class RegisterRequest
     {
         public string Email { get; set; } = default!;
@@ -175,9 +172,9 @@ namespace OnlineBankingApp.API.Controllers
         public string Email { get; set; } = default!;
         public string Password { get; set; } = default!;
     }
+
     public class ChangeRoleRequest
     {
         public string NewRole { get; set; } = string.Empty;
     }
-
 }

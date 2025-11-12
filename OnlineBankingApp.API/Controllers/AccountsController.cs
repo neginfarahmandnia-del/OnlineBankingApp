@@ -10,6 +10,7 @@ using OnlineBankingApp.Infrastructure.Persistence;
 using OnlineBankingApp.Models.Dtos;
 using System.Security.Claims;
 using OnlineBankingApp.Application.Dtos.Accounts;
+
 namespace OnlineBankingApp.API.Controllers;
 
 [ApiController]
@@ -39,11 +40,12 @@ public class AccountsController : ControllerBase
         return User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
     }
 
-    // 🔹 GET: api/Accounts/bankaccounts (alle Konten - Admin oder Übersicht)
+    // 🔹 GET: api/Accounts/bankaccounts (alle Konten – z.B. für Admin / Übersicht)
     [HttpGet("bankaccounts")]
     public async Task<ActionResult<IEnumerable<BankAccountDto>>> GetBankAccounts()
     {
         var accounts = await _context.BankAccounts
+            .AsNoTracking()
             .Select(b => new BankAccountDto
             {
                 Id = b.Id,
@@ -56,7 +58,7 @@ public class AccountsController : ControllerBase
         return Ok(accounts);
     }
 
-    // 🔹 GET: api/Accounts/user-accounts (nur eigene Konten)
+    // 🔹 GET: api/Accounts/user-accounts (nur Konten des aktuellen Benutzers)
     [HttpGet("user-accounts")]
     public async Task<ActionResult<IEnumerable<BankAccountDto>>> GetUserBankAccounts()
     {
@@ -79,7 +81,7 @@ public class AccountsController : ControllerBase
         return Ok(accounts);
     }
 
-    // 🔹 GET: api/Accounts/all (Direkt über Service)
+    // 🔹 GET: api/Accounts/all (direkt über Service, optional)
     [HttpGet("all")]
     [AllowAnonymous]
     public async Task<ActionResult<List<BankAccount>>> GetAll()
@@ -87,19 +89,25 @@ public class AccountsController : ControllerBase
         var accounts = await _bankAccountService.GetAll();
         return Ok(accounts);
     }
-    // OnlineBankingApp.API/Controllers/AccountsController.cs
 
-    [HttpPost] // POST api/Accounts
+    // 🔹 POST: api/Accounts  – Neues Konto anlegen
+    [HttpPost]
     public async Task<IActionResult> CreateAccount([FromBody] CreateBankAccountDto dto)
     {
-        if (!ModelState.IsValid) return BadRequest(ModelState);
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
 
         var userId = GetUserId();
-        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (string.IsNullOrEmpty(userId))
+            return Unauthorized();
 
-        // 1 Konto pro Benutzer – prüfen
-        var already = await _context.BankAccounts.AnyAsync(a => a.UserId == userId);
-        if (already) return Conflict("Dieser Benutzer hat bereits ein Konto.");
+        // ❌ NICHT mehr: "1 Konto pro Benutzer"
+        // ✅ Stattdessen: Prüfen, ob die IBAN bereits existiert
+        var ibanExists = await _context.BankAccounts
+            .AnyAsync(a => a.IBAN == dto.IBAN);
+
+        if (ibanExists)
+            return Conflict("Ein Konto mit dieser IBAN existiert bereits.");
 
         var account = new BankAccount
         {
@@ -110,13 +118,14 @@ public class AccountsController : ControllerBase
             Kontotyp = dto.Kontotyp,
             Abteilung = dto.Abteilung,
             WarnLimit = dto.WarnLimit,
-
             Balance = 0m,
             CreatedAt = DateTime.UtcNow
         };
 
         var created = await _bankAccountService.Create(account);
-        // optional: created zurückgeben (oder nur 201 ohne Body)
+
+        // Du könntest hier auch ein spezielles GetById haben;
+        // für jetzt verwenden wir GetUserBankAccounts als "Ressource".
         return CreatedAtAction(nameof(GetUserBankAccounts), new { id = created.Id }, created);
     }
 
@@ -136,32 +145,49 @@ public class AccountsController : ControllerBase
     [HttpPost("deposit")]
     public async Task<IActionResult> Deposit([FromBody] DepositRequestDto dto)
     {
-        if (dto.Amount <= 0) return BadRequest("Der Betrag muss positiv sein.");
+        if (dto.Amount <= 0)
+            return BadRequest("Der Betrag muss positiv sein.");
 
         var userId = GetUserId();
-        var result = await _bankAccountService.DepositAsync(userId, dto.Amount, dto.Description);
 
-        return result ? Ok("Einzahlung erfolgreich") : BadRequest("Einzahlung fehlgeschlagen");
+        var result = await _bankAccountService.DepositAsync(
+            userId,
+            dto.Amount,
+            dto.Description);
+
+        return result
+            ? Ok("Einzahlung erfolgreich")
+            : BadRequest("Einzahlung fehlgeschlagen");
     }
 
+    // 🔹 POST: api/Accounts/withdraw
     [HttpPost("withdraw")]
     public async Task<IActionResult> Withdraw([FromBody] WithdrawRequestDto dto)
     {
-        if (dto.Amount <= 0) return BadRequest("Der Betrag muss positiv sein.");
+        if (dto.Amount <= 0)
+            return BadRequest("Der Betrag muss positiv sein.");
 
         var userId = GetUserId();
-        var result = await _bankAccountService.WithdrawAsync(userId, dto.Amount, dto.Description);
 
-        return result ? Ok("Auszahlung erfolgreich") : BadRequest("Auszahlung fehlgeschlagen");
+        var result = await _bankAccountService.WithdrawAsync(
+            userId,
+            dto.Amount,
+            dto.Description);
+
+        return result
+            ? Ok("Auszahlung erfolgreich")
+            : BadRequest("Auszahlung fehlgeschlagen");
     }
 
-
+    // 🔹 POST: api/Accounts/transfer
     [HttpPost("transfer")]
     public async Task<IActionResult> Transfer([FromBody] TransferRequestDto dto)
     {
-        if (dto.Amount <= 0) return BadRequest("Der Betrag muss positiv sein.");
+        if (dto.Amount <= 0)
+            return BadRequest("Der Betrag muss positiv sein.");
 
         var userId = GetUserId();
+
         var result = await _bankAccountService.TransferAsync(
             userId,
             dto.FromAccountId,
@@ -169,9 +195,10 @@ public class AccountsController : ControllerBase
             dto.Amount,
             dto.Description);
 
-        return result ? Ok("Transfer erfolgreich") : BadRequest("Transfer fehlgeschlagen");
+        return result
+            ? Ok("Transfer erfolgreich")
+            : BadRequest("Transfer fehlgeschlagen");
     }
-
 
     // 🔹 GET: api/Accounts/transactions
     [HttpGet("transactions")]
