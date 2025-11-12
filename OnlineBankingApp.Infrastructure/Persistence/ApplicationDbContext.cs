@@ -36,7 +36,7 @@ namespace OnlineBankingApp.Infrastructure.Persistence
             // BankAccount
             modelBuilder.Entity<BankAccount>(e =>
             {
-                e.HasIndex(x => x.UserId)
+                e.HasIndex(x => x.IBAN)
      
      .HasFilter("[UserId] IS NOT NULL AND [UserId] <> ''");
 

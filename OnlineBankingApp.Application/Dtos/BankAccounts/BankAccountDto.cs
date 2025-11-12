@@ -1,8 +1,11 @@
-﻿namespace OnlineBankingApp.Application.Dtos.BankAccounts
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace OnlineBankingApp.Application.Dtos.BankAccounts
 {
     public class BankAccountDto
     {
         public int Id { get; set; }
+        [StringLength(34)] // z.B. 34 oder mindestens 22
         public string IBAN { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string AccountHolder { get; set; } = string.Empty;

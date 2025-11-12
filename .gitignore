@@ -491,3 +491,5 @@ appsettings.Development.json
 appsettings.json
 OnlineBankingApp.API/appsettings.json
 OnlineBankingAdminPanel/appsettings.json
+/onlinebanking-react/node_modules
+/onlinebanking-react/dist

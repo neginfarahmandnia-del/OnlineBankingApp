@@ -19,6 +19,26 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OnlineBankingAdminPanel", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OnlineBankingApp.Shared", "OnlineBankingApp.Shared\OnlineBankingApp.Shared.csproj", "{9E8AFCA9-B028-48AB-B8BB-7F6423F369DF}"
 EndProject
+Project("{E24C65DC-7377-472B-9ABA-BC803B73C61A}") = "onlinebanking-react", "..\onlinebanking-react\", "{72442941-51A4-1E77-4BD5-67220B680FA1}"
+	ProjectSection(WebsiteProperties) = preProject
+		TargetFrameworkMoniker = ".NETFramework,Version%3Dv4.8.1"
+		Debug.AspNetCompiler.VirtualPath = "/localhost_62164"
+		Debug.AspNetCompiler.PhysicalPath = "..\onlinebanking-react\"
+		Debug.AspNetCompiler.TargetPath = "PrecompiledWeb\localhost_62164\"
+		Debug.AspNetCompiler.Updateable = "true"
+		Debug.AspNetCompiler.ForceOverwrite = "true"
+		Debug.AspNetCompiler.FixedNames = "false"
+		Debug.AspNetCompiler.Debug = "True"
+		Release.AspNetCompiler.VirtualPath = "/localhost_62164"
+		Release.AspNetCompiler.PhysicalPath = "..\onlinebanking-react\"
+		Release.AspNetCompiler.TargetPath = "PrecompiledWeb\localhost_62164\"
+		Release.AspNetCompiler.Updateable = "true"
+		Release.AspNetCompiler.ForceOverwrite = "true"
+		Release.AspNetCompiler.FixedNames = "false"
+		Release.AspNetCompiler.Debug = "False"
+		VWDPort = "62164"
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -125,6 +145,18 @@ Global
 		{9E8AFCA9-B028-48AB-B8BB-7F6423F369DF}.Release|x64.Build.0 = Release|Any CPU
 		{9E8AFCA9-B028-48AB-B8BB-7F6423F369DF}.Release|x86.ActiveCfg = Release|Any CPU
 		{9E8AFCA9-B028-48AB-B8BB-7F6423F369DF}.Release|x86.Build.0 = Release|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Debug|x64.Build.0 = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Debug|x86.Build.0 = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Release|Any CPU.ActiveCfg = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Release|Any CPU.Build.0 = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Release|x64.ActiveCfg = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Release|x64.Build.0 = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Release|x86.ActiveCfg = Debug|Any CPU
+		{72442941-51A4-1E77-4BD5-67220B680FA1}.Release|x86.Build.0 = Debug|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
