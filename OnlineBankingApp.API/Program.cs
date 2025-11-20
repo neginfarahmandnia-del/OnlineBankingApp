@@ -9,11 +9,10 @@ using OnlineBankingApp.Application.Interfaces;
 using OnlineBankingApp.Infrastructure.Identity;
 using OnlineBankingApp.Infrastructure.Persistence;
 using OnlineBankingApp.Infrastructure.Services;
+using OnlineBankingApp.Domain.Entities;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
-// optionaler Seeder:
-using OnlineBankingApp.Domain.Entities;
 
 namespace OnlineBankingApp.API
 {
@@ -22,8 +21,30 @@ namespace OnlineBankingApp.API
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
             var config = builder.Configuration;
             var env = builder.Environment;
+
+            // -------------------------------------------------
+            // CORS – einheitliche Policy
+            // -------------------------------------------------
+            const string CorsPolicy = "CorsPolicy";
+
+            builder.Services.AddCors(opts =>
+            {
+                opts.AddPolicy(CorsPolicy, p => p
+                    .WithOrigins(
+                        "http://localhost:4200",          // Angular Dev
+                        "http://localhost:5173",
+                        "http://localhost:5174",
+                        "http://127.0.0.1:5173",
+                        "https://onlinebankingapp-2.onrender.com"
+                    )
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                // .AllowCredentials()  // nur falls nötig
+                );
+            });
 
             // -------------------------------------------------
             // DB
@@ -90,22 +111,6 @@ namespace OnlineBankingApp.API
                         RoleClaimType = ClaimTypes.Role
                     };
                 });
-
-            // -------------------------------------------------
-            // CORS
-            // -------------------------------------------------
-            builder.Services.AddCors(opts =>
-            {
-                opts.AddPolicy("AllowWeb", p => p
-                    .WithOrigins(
-                        "http://localhost:5173",
-                        "http://localhost:5174",
-                        "http://127.0.0.1:5173",
-                        "https://onlinebankingapp-2.onrender.com"
-                    )
-                    .AllowAnyHeader()
-                    .AllowAnyMethod());
-            });
 
             // -------------------------------------------------
             // MVC / JSON
@@ -186,13 +191,12 @@ namespace OnlineBankingApp.API
 
                 await SeedRolesAndAdminUser(sp, logger);
 
-                // Optional: Demo-Konto + Transaktion für den Admin anlegen
                 var seedAdminAccount = string.Equals(
                     Environment.GetEnvironmentVariable("SEED_ADMIN_ACCOUNT"),
                     "true", StringComparison.OrdinalIgnoreCase);
 
-                if (seedAdminAccount)
-                    await EnsureAdminHasAccountWithSampleData(sp, logger);
+                await EnsureAdminHasAccountWithSampleData(sp, logger);
+
             }
 
             // -------------------------------------------------
@@ -205,11 +209,16 @@ namespace OnlineBankingApp.API
                 c.RoutePrefix = "swagger";
             });
 
-            // app.UseHttpsRedirection(); // hinter Proxy optional
+            app.UseHttpsRedirection();
+
             app.UseRouting();
-            app.UseCors("AllowWeb");
+
+            // CORS einmalig anwenden (inkl. http://localhost:4200)
+            app.UseCors(CorsPolicy);
+
             app.UseAuthentication();
             app.UseAuthorization();
+
             app.MapControllers();
 
             app.MapGet("/", () => Results.Ok("OK"));
@@ -218,14 +227,22 @@ namespace OnlineBankingApp.API
             await app.RunAsync();
         }
 
+        // =====================================================
+        //  Hilfsmethoden für Rollen / Admin-Seeding
+        // =====================================================
+
         private static async Task SeedRolesAndAdminUser(IServiceProvider services, ILogger logger)
         {
             var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
             var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
 
             foreach (var role in new[] { "Admin", "Manager", "Mitarbeiter" })
+            {
                 if (!await roleManager.RoleExistsAsync(role))
+                {
                     await roleManager.CreateAsync(new IdentityRole(role));
+                }
+            }
 
             const string adminEmail = "1admin@example.com";
             const string adminPassword = "Admin23!";
@@ -248,7 +265,6 @@ namespace OnlineBankingApp.API
             }
         }
 
-        // -------- Optionaler Seeder: Konto + Testdaten für den Admin --------
         private static async Task EnsureAdminHasAccountWithSampleData(IServiceProvider services, ILogger logger)
         {
             var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();

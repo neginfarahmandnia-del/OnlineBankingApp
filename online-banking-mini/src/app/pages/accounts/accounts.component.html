@@ -1,0 +1,42 @@
+<section class="accounts-page">
+
+  <h2>Meine Konten</h2>
+
+  <button (click)="onLogout()">Abmelden</button>
+
+  <!-- Tabelle nur anzeigen, wenn Accounts vorhanden -->
+  <table *ngIf="accounts && accounts.length > 0; else noAccounts">
+    <thead>
+      <tr>
+        <th>IBAN</th>
+        <th>Name</th>
+        <th>Inhaber</th>
+        <th>Kontotyp</th>
+        <th>Abteilung</th>
+        <th>Kontostand</th>
+        <th>Warnlimit</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <tr *ngFor="let acc of accounts">
+        <td>{{ acc.iban }}</td>
+        <td>{{ acc.name }}</td>
+        <td>{{ acc.accountHolder }}</td>
+        <td>{{ acc.kontotyp }}</td>
+        <td>{{ acc.abteilung }}</td>
+        <td>{{ acc.balance | number:'1.2-2' }} €</td>
+        <td>{{ acc.warnLimit | number:'1.2-2' }} €</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Wird angezeigt, wenn accounts leer ist -->
+  <ng-template #noAccounts>
+    <p>Keine Konten gefunden.</p>
+  </ng-template>
+
+  <h3>Transaktionen nach Kategorie</h3>
+  <app-transactions-chart></app-transactions-chart>
+
+</section>
